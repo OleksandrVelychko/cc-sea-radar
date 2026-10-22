@@ -1,0 +1,32 @@
+{
+  "MetaData": {
+    "MMSI": 123456789,
+    "MMSI_String": 123456789,
+    "ShipName": "SYNTHETIC SAMPLE",
+    "latitude": 51.0,
+    "longitude": 1.45,
+    "time_utc": "2026-01-01 12:00:00.12345678 +0000 UTC"
+  },
+  "MessageType": "PositionReport",
+  "Message": {
+    "PositionReport": {
+      "MessageID": 1,
+      "RepeatIndicator": 0,
+      "UserID": 123456789,
+      "Valid": true,
+      "NavigationalStatus": 0,
+      "RateOfTurn": 0,
+      "Sog": 12.4,
+      "PositionAccuracy": false,
+      "Longitude": 1.45,
+      "Latitude": 51.0,
+      "Cog": 86.7,
+      "TrueHeading": 87,
+      "Timestamp": 0,
+      "SpecialManoeuvreIndicator": 0,
+      "Spare": 0,
+      "Raim": false,
+      "CommunicationState": 0
+    }
+  }
+}

@@ -76,6 +76,10 @@ export const DEMO_VESSELS = [
   },
 ] as const;
 
+// Знімок справжніх позицій (SPRINT-02): строк від початку серверної обробки,
+// включно зі з'єднанням і підпискою.
+export const SNAPSHOT_WINDOW_SECONDS = 15;
+
 // OpenStreetMap Standard.
 export const TILE_LAYER = {
   url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",

@@ -9,6 +9,8 @@ import type { Vessel } from "./vessel";
 type Props = {
   vessels: Vessel[];
   onSelect: (id: string) => void;
+  // Зміна значення (крім 0) повертає карту до початкового виду.
+  viewResetKey: number;
 };
 
 const ICON_SIZE = 24;
@@ -27,7 +29,7 @@ function createIconElement(vessel: Vessel): HTMLElement {
   return element;
 }
 
-export default function SeaMap({ vessels, onSelect }: Props) {
+export default function SeaMap({ vessels, onSelect, viewResetKey }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const leafletRef = useRef<typeof Leaflet | null>(null);
   const mapRef = useRef<Leaflet.Map | null>(null);
@@ -114,6 +116,12 @@ export default function SeaMap({ vessels, onSelect }: Props) {
       }
     }
   }, [mapReady, vessels]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || viewResetKey === 0) return;
+    map.setView([INITIAL_VIEW.lat, INITIAL_VIEW.lon], INITIAL_VIEW.zoom);
+  }, [mapReady, viewResetKey]);
 
   return <div ref={containerRef} className="sea-map" />;
 }

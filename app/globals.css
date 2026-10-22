@@ -32,9 +32,25 @@ body {
   border-left: 1px solid #ccc;
 }
 
+.panel__load {
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.panel__load:disabled {
+  cursor: progress;
+}
+
 .panel__source {
   margin: 0 0 16px;
   font-weight: 600;
+}
+
+.panel__message {
+  margin: 0 0 16px;
 }
 
 .vessel-card dl {

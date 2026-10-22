@@ -170,17 +170,29 @@ export function collectSnapshot(options: CollectOptions): Promise<CollectResult>
       stopped = true;
       return;
     }
-    signal?.addEventListener("abort", stop, { once: true });
+    // Вікно відбору - [startedAt, startedAt + windowMs). Обробник таймера може
+    // запізнитися, тому події самі перевіряють межу за переданим годинником.
+    const deadline = attemptedAt.getTime() + windowMs;
+    const windowOver = () => clock.now().getTime() >= deadline;
 
-    const elapsed = clock.now().getTime() - attemptedAt.getTime();
-    cancelTimer = clock.setTimer(Math.max(0, windowMs - elapsed), () => {
+    function endWindow() {
       if (subscribed) succeed("window_elapsed");
       else fail("connect_failed");
-    });
+    }
+
+    // Строк минув ще до початку збору: з'єднання не відкривається.
+    if (windowOver()) {
+      fail("connect_failed");
+      return;
+    }
+    signal?.addEventListener("abort", stop, { once: true });
+
+    cancelTimer = clock.setTimer(deadline - clock.now().getTime(), endWindow);
 
     const handlers: SourceHandlers = {
       onOpen() {
         if (stopped) return;
+        if (windowOver()) return endWindow();
         // Відкриття до повернення з openSource - надіслати одразу після нього.
         if (!source) {
           openPending = true;
@@ -198,6 +210,7 @@ export function collectSnapshot(options: CollectOptions): Promise<CollectResult>
       onMessage(data) {
         // До надсилання підписки кадри не належать до нашої спроби.
         if (stopped || !subscribed) return;
+        if (windowOver()) return endWindow();
         const message = decodeFrame(data);
         // Правило: кадр, що не розбирається як JSON-об'єкт, - порушення
         // протоколу джерела, як і явне повідомлення помилки.
@@ -213,10 +226,12 @@ export function collectSnapshot(options: CollectOptions): Promise<CollectResult>
       },
       onError() {
         if (stopped) return;
+        if (windowOver()) return endWindow();
         fail(opened ? "disconnected" : "connect_failed");
       },
       onClose() {
         if (stopped) return;
+        if (windowOver()) return endWindow();
         fail(opened ? "disconnected" : "connect_failed");
       },
     };

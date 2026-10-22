@@ -519,3 +519,117 @@ test("ключ не потрапляє в результат і консоль",
     });
   }
 });
+
+// Регресія (додатковий review після R3): час і доставка обробника таймера
+// керуються окремо - setNow рухає час, fireDue виконує прострочені таймери.
+// Так відтворюється затриманий callback вікна під навантаженням.
+test.describe("межа вікна при затриманому таймері", () => {
+  function delayedClock() {
+    let now = START;
+    const timers: { at: number; fire: () => void; active: boolean }[] = [];
+    const clock: Clock = {
+      now: () => new Date(now),
+      setTimer(ms, fire) {
+        const timer = { at: now + ms, fire, active: true };
+        timers.push(timer);
+        return () => {
+          timer.active = false;
+        };
+      },
+    };
+    return {
+      clock,
+      setNow: (iso: string) => {
+        now = Date.parse(iso);
+      },
+      fireDue() {
+        for (const timer of timers) {
+          if (timer.active && timer.at <= now) {
+            timer.active = false;
+            timer.fire();
+          }
+        }
+      },
+      pendingTimers: () => timers.filter((timer) => timer.active).length,
+    };
+  }
+
+  function run(overrides: Partial<CollectOptions> = {}) {
+    const time = delayedClock();
+    const source = fakeSource();
+    const result = collectSnapshot({
+      apiKey: KEY, bounds: BOUNDS, windowMs: WINDOW_MS, limit: LIMIT,
+      openSource: source.openSource, clock: time.clock, ...overrides,
+    });
+    return { time, source, result };
+  }
+
+  test("позиція на +16000 мс до виконання обробника вікна не приймається", async () => {
+    const { time, source, result } = run();
+    source.emit().onOpen();
+    source.emit().onMessage(JSON.stringify(CONFIRMATION));
+    time.setNow("2026-10-23T12:00:01.000Z");
+    source.emit().onMessage(position(111111111));
+    time.setNow("2026-10-23T12:00:16.000Z");
+    source.emit().onMessage(position(222222222));
+    time.fireDue();
+    expect(await result).toEqual({
+      ok: true,
+      vessels: [expect.objectContaining({ id: "111111111" })],
+      collectedAt: new Date("2026-10-23T12:00:16.000Z"),
+      truncated: false,
+      reason: "window_elapsed",
+    });
+    expect(source.state.closed).toBe(1);
+    expect(time.pendingTimers()).toBe(0);
+  });
+
+  test("позиція рівно на межі 15000 мс уже поза вікном", async () => {
+    const { time, source, result } = run();
+    source.emit().onOpen();
+    time.setNow("2026-10-23T12:00:15.000Z");
+    source.emit().onMessage(position(111111111));
+    time.fireDue();
+    expect(await result).toMatchObject({ ok: true, vessels: [], reason: "window_elapsed" });
+  });
+
+  test("open після кінця вікна - без підписки, connect_failed", async () => {
+    const { time, source, result } = run();
+    time.setNow("2026-10-23T12:00:16.000Z");
+    source.emit().onOpen();
+    time.fireDue();
+    expect(await result).toEqual({
+      ok: false,
+      code: "connect_failed",
+      attemptedAt: new Date("2026-10-23T12:00:00.000Z"),
+    });
+    expect(source.state.sent).toEqual([]);
+    expect(source.state.closed).toBe(1);
+    expect(time.pendingTimers()).toBe(0);
+  });
+
+  test("закриття після кінця вікна до обробника - штатний успіх, не disconnected", async () => {
+    const { time, source, result } = run();
+    source.emit().onOpen();
+    source.emit().onMessage(position(111111111));
+    time.setNow("2026-10-23T12:00:16.000Z");
+    source.emit().onClose();
+    time.fireDue();
+    expect(await result).toMatchObject({
+      ok: true,
+      reason: "window_elapsed",
+      vessels: [expect.objectContaining({ id: "111111111" })],
+    });
+  });
+
+  test("startedAt уже прострочений - connect_failed одразу, з'єднання не відкривається", async () => {
+    const { time, source, result } = run({ startedAt: new Date("2026-10-23T11:59:40.000Z") });
+    expect(await result).toEqual({
+      ok: false,
+      code: "connect_failed",
+      attemptedAt: new Date("2026-10-23T11:59:40.000Z"),
+    });
+    expect(source.state.opened).toBe(0);
+    expect(time.pendingTimers()).toBe(0);
+  });
+});

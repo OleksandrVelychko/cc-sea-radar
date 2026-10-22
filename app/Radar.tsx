@@ -1,20 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import { DEMO_VESSEL } from "./config";
+import { DEMO_VESSELS } from "./config";
 import SeaMap from "./SeaMap";
 import VesselCard from "./VesselCard";
-import { formatSource, toVesselName, type Vessel } from "./vessel";
+import {
+  formatSource,
+  initialBearing,
+  toVesselName,
+  type Vessel,
+} from "./vessel";
 
+// Стан на старті: перша точка маршруту, курс - до другої точки.
 function createDemoVessels(): Vessel[] {
-  return [
-    {
-      ...DEMO_VESSEL,
-      name: toVesselName(DEMO_VESSEL.name),
-      timestamp: new Date().toISOString(),
+  const timestamp = new Date().toISOString();
+  return DEMO_VESSELS.map(({ id, name, speedKnots, route }) => {
+    const [[lat, lon], [nextLat, nextLon]] = route;
+    return {
+      id,
+      name: toVesselName(name),
+      lat,
+      lon,
+      speedKnots,
+      courseDeg: initialBearing(lat, lon, nextLat, nextLon),
+      timestamp,
       source: "demo",
-    },
-  ];
+    };
+  });
 }
 
 // Єдине місце стану суден і вибору: карта й картка читають звідси.

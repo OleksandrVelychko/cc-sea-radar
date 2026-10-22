@@ -27,6 +27,24 @@ export function toVesselName(raw: string | null): string | null {
   return raw === null || raw === "" ? null : raw;
 }
 
+// Початковий азимут відрізка по великому колу, у [0, 360).
+export function initialBearing(
+  fromLat: number,
+  fromLon: number,
+  toLat: number,
+  toLon: number,
+): number {
+  const rad = Math.PI / 180;
+  const phi1 = fromLat * rad;
+  const phi2 = toLat * rad;
+  const deltaLambda = (toLon - fromLon) * rad;
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x =
+    Math.cos(phi1) * Math.sin(phi2) -
+    Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  return ((Math.atan2(y, x) / rad) % 360 + 360) % 360;
+}
+
 export function formatCoordinates(lat: number, lon: number): string {
   return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 }

@@ -79,6 +79,8 @@ export const DEMO_VESSELS = [
 // Знімок справжніх позицій (SPRINT-02): строк від початку серверної обробки,
 // включно зі з'єднанням і підпискою.
 export const SNAPSHOT_WINDOW_SECONDS = 15;
+// Не більше унікальних суден з валідною позицією; на ліміті збір завершується.
+export const SNAPSHOT_VESSEL_LIMIT = 100;
 
 // OpenStreetMap Standard.
 export const TILE_LAYER = {

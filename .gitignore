@@ -11,6 +11,7 @@ next-env.d.ts
 
 # env / secrets
 .env*
+!.env.example
 
 # logs
 npm-debug.log*

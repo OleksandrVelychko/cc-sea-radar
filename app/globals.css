@@ -1,0 +1,79 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+}
+
+.page {
+  height: 100%;
+}
+
+.radar {
+  display: flex;
+  height: 100%;
+}
+
+.sea-map {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.panel {
+  width: 280px;
+  flex-shrink: 0;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-left: 1px solid #ccc;
+}
+
+.panel__source {
+  margin: 0 0 16px;
+  font-weight: 600;
+}
+
+.vessel-card dl {
+  margin: 0;
+}
+
+.vessel-card dt {
+  color: #555;
+  font-size: 0.85em;
+}
+
+.vessel-card dd {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+
+/* Значок судна: контейнер Leaflet і орієнтований за курсом вміст. */
+.vessel-marker {
+  background: none;
+  border: none;
+}
+
+.vessel-icon {
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.vessel-icon[data-icon="course"] {
+  background: #c62828;
+  clip-path: polygon(50% 0, 90% 100%, 50% 75%, 10% 100%);
+}
+
+.vessel-icon[data-icon="neutral"] {
+  box-sizing: border-box;
+  width: 60%;
+  height: 60%;
+  margin: 20%;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #c62828;
+}

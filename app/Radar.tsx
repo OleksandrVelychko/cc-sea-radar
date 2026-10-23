@@ -12,24 +12,42 @@ import {
   type Vessel,
 } from "./vessel";
 
-// Результат останньої спроби (SPRINT-02, частина A). empty - loaded без суден.
-type View =
-  | { kind: "demo" }
+// Два незалежні стани (SPRINT-03b, частина A): показаний набір із підписом
+// джерела і результат останньої спроби окремим рядком.
+
+type Snapshot = {
+  vessels: Vessel[];
+  collectedAt: string;
+  windowSeconds: number;
+  truncated: boolean;
+};
+
+// Показаний набір: після завантаження сторінки - демонстрація; замінюється
+// тільки непорожнім успіхом.
+type Shown = { kind: "demo" } | ({ kind: "snapshot" } & Snapshot);
+
+// Результат останньої спроби; null - натискань ще не було.
+type Attempt =
   | { kind: "loading" }
-  | {
-      kind: "loaded";
-      vessels: Vessel[];
-      collectedAt: string;
-      windowSeconds: number;
-      truncated: boolean;
-    }
-  | { kind: "error"; message: string };
+  | { kind: "success"; collectedAt: string; count: number }
+  | { kind: "empty"; collectedAt: string }
+  | { kind: "error"; attemptedAt: string; message: string }
+  | { kind: "noResponse" };
 
-// Відповідь, що не відповідає контракту endpoint, - як внутрішня помилка.
-const INTERNAL_ERROR_MESSAGE = "Внутрішня помилка сервера";
+type Outcome =
+  | ({ kind: "snapshot" } & Snapshot)
+  | { kind: "error"; attemptedAt: string; message: string }
+  | { kind: "noResponse" };
 
-// GET /api/snapshot -> стан інтерфейсу. Часи - тільки з відповіді сервера.
-async function fetchSnapshot(signal: AbortSignal): Promise<View> {
+const HINT = "Після оновлення сторінки знову показуються демонстраційні дані";
+
+function isTime(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+// GET /api/snapshot -> результат спроби. Часи - тільки з тіла відповіді.
+// Немає відповіді, нерозбірне тіло або тіло без потрібних полів - noResponse.
+async function fetchSnapshot(signal: AbortSignal): Promise<Outcome> {
   try {
     const response = await fetch("/api/snapshot", { cache: "no-store", signal });
     const body: unknown = await response.json();
@@ -37,12 +55,12 @@ async function fetchSnapshot(signal: AbortSignal): Promise<View> {
     if (
       data.ok === true &&
       Array.isArray(data.vessels) &&
-      typeof data.collectedAt === "string" &&
+      isTime(data.collectedAt) &&
       typeof data.windowSeconds === "number" &&
       typeof data.truncated === "boolean"
     ) {
       return {
-        kind: "loaded",
+        kind: "snapshot",
         vessels: data.vessels as Vessel[],
         collectedAt: data.collectedAt,
         windowSeconds: data.windowSeconds,
@@ -50,39 +68,38 @@ async function fetchSnapshot(signal: AbortSignal): Promise<View> {
       };
     }
     const error = data.error as { message?: unknown } | undefined;
-    if (data.ok === false && typeof error?.message === "string") {
-      return { kind: "error", message: error.message };
+    if (data.ok === false && isTime(data.attemptedAt) && typeof error?.message === "string") {
+      return { kind: "error", attemptedAt: data.attemptedAt, message: error.message };
     }
   } catch (cause) {
     if (signal.aborted) throw cause;
   }
-  return { kind: "error", message: INTERNAL_ERROR_MESSAGE };
+  return { kind: "noResponse" };
 }
 
-// Підпис поруч із картою: що ми бачимо.
-function caption(view: View): string {
-  switch (view.kind) {
-    case "demo":
-      return formatSource("demo");
+// Підпис джерела: що саме на карті й коли воно отримане.
+function caption(shown: Shown): string {
+  if (shown.kind === "demo") return formatSource("demo");
+  const text =
+    `AISStream · знімок за ${shown.windowSeconds} с · отримано ${formatTime(shown.collectedAt)}` +
+    ` · суден: ${shown.vessels.length} · вибірка неповна`;
+  return shown.truncated ? `${text} · зупинено на ліміті ${SNAPSHOT_VESSEL_LIMIT}` : text;
+}
+
+// Рядок результату останньої спроби.
+function attemptLine(attempt: Attempt): string {
+  switch (attempt.kind) {
     case "loading":
       return "Завантаження…";
+    case "success":
+      return `Спроба ${formatTime(attempt.collectedAt)}: отримано суден: ${attempt.count}`;
+    case "empty":
+      return `Спроба ${formatTime(attempt.collectedAt)}: за час збору позицій не отримано`;
     case "error":
-      return "Даних на карті немає";
-    case "loaded": {
-      const text =
-        `AISStream · знімок за ${view.windowSeconds} с · отримано ${formatTime(view.collectedAt)}` +
-        ` · суден: ${view.vessels.length} · вибірка неповна`;
-      return view.truncated ? `${text} · зупинено на ліміті ${SNAPSHOT_VESSEL_LIMIT}` : text;
-    }
+      return `Спроба ${formatTime(attempt.attemptedAt)}: не вдалося отримати дані: ${attempt.message}`;
+    case "noResponse":
+      return "Спроба: не вдалося отримати дані: Немає відповіді сервера";
   }
-}
-
-function message(view: View): string | null {
-  if (view.kind === "error") return `Не вдалося отримати дані: ${view.message}`;
-  if (view.kind === "loaded" && view.vessels.length === 0) {
-    return "За час збору позицій не отримано";
-  }
-  return null;
 }
 
 type DemoRoute = (typeof DEMO_VESSELS)[number]["route"];
@@ -142,41 +159,56 @@ function advance(state: DemoState, timestamp: string): DemoState {
 
 // Єдине місце стану суден і вибору: карта й картка читають звідси.
 export default function Radar() {
-  const [view, setView] = useState<View>({ kind: "demo" });
+  const [shown, setShown] = useState<Shown>({ kind: "demo" });
+  const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [demo, setDemo] = useState(createDemoState);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Лічильник повернень карти до початкового виду: тільки перший непорожній успіх.
   const [viewResetKey, setViewResetKey] = useState(0);
   const hadNonEmptySnapshot = useRef(false);
   const requestRef = useRef<AbortController | null>(null);
-  const isDemo = view.kind === "demo";
+  const isDemo = shown.kind === "demo";
+  const loading = attempt?.kind === "loading";
 
   // Запит, що ще йде, скасовується при виході зі сторінки.
   useEffect(() => () => requestRef.current?.abort(), []);
 
   async function loadSnapshot() {
-    if (view.kind === "loading") return;
-    // loading: демотаймер зупиняється (ефект нижче), судна, вибір і картка прибрані.
-    setView({ kind: "loading" });
-    setSelectedId(null);
+    if (loading) return;
+    // Під час запиту набір, підпис, вибір і картка лишаються; демо рухається.
+    setAttempt({ kind: "loading" });
     const controller = new AbortController();
     requestRef.current = controller;
-    let next: View;
+    let outcome: Outcome;
     try {
-      next = await fetchSnapshot(controller.signal);
+      outcome = await fetchSnapshot(controller.signal);
     } catch {
       return; // Сторінку залишено - стан більше не оновлюється.
     }
-    if (next.kind === "loaded" && next.vessels.length > 0 && !hadNonEmptySnapshot.current) {
+    if (outcome.kind !== "snapshot") {
+      setAttempt(outcome);
+      return;
+    }
+    const { vessels } = outcome;
+    if (vessels.length === 0) {
+      // Порожня відповідь змінює тільки результат спроби.
+      setAttempt({ kind: "empty", collectedAt: outcome.collectedAt });
+      return;
+    }
+    // Непорожній успіх: набір замінюється цілком (без злиття), в одному оновленні
+    // з результатом спроби й вибором; демотаймер зупиняється (ефект нижче).
+    if (!hadNonEmptySnapshot.current) {
       hadNonEmptySnapshot.current = true;
       setViewResetKey((key) => key + 1);
     }
-    setView(next);
+    setShown(outcome);
+    setAttempt({ kind: "success", collectedAt: outcome.collectedAt, count: vessels.length });
+    setSelectedId((id) => (vessels.some((vessel) => vessel.id === id) ? id : null));
   }
 
-  // Один таймер на всі демонстраційні судна, тільки в стані idle-demo.
+  // Один таймер на всі демонстраційні судна, поки показана демонстрація.
   // Ефект перезапускається при hot reload і подвійному монтуванні Strict Mode -
-  // cleanup прибирає попередній таймер; вихід з demo його зупиняє.
+  // cleanup прибирає попередній таймер; заміна набору знімком його зупиняє.
   useEffect(() => {
     if (!isDemo) return;
     // Час на старті - момент запуску таймера (тільки для суден, що ще не рушили).
@@ -206,14 +238,12 @@ export default function Radar() {
     return () => clearInterval(timer);
   }, [isDemo]);
 
-  // На карті - тільки набір поточного стану: демо, знімок або нічого.
-  const vessels = useMemo(() => {
-    if (view.kind === "demo") return demo.map((state) => state.vessel);
-    if (view.kind === "loaded") return view.vessels;
-    return [];
-  }, [view, demo]);
+  // На карті - показаний набір: демонстрація або останній непорожній знімок.
+  const vessels = useMemo(
+    () => (shown.kind === "demo" ? demo.map((state) => state.vessel) : shown.vessels),
+    [shown, demo],
+  );
   const selected = vessels.find((vessel) => vessel.id === selectedId);
-  const note = message(view);
 
   return (
     <div className="radar">
@@ -227,12 +257,13 @@ export default function Radar() {
           type="button"
           className="panel__load"
           onClick={loadSnapshot}
-          disabled={view.kind === "loading"}
+          disabled={loading}
         >
           Завантажити справжні позиції
         </button>
-        <p className="panel__source">{caption(view)}</p>
-        {note && <p className="panel__message">{note}</p>}
+        <p className="panel__source">{caption(shown)}</p>
+        {attempt && <p className="panel__attempt">{attemptLine(attempt)}</p>}
+        <p className="panel__hint">{HINT}</p>
         {selected && <VesselCard vessel={selected} />}
       </aside>
     </div>

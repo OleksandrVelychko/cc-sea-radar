@@ -49,8 +49,14 @@ body {
   font-weight: 600;
 }
 
-.panel__message {
+.panel__attempt {
+  margin: 0 0 8px;
+}
+
+.panel__hint {
   margin: 0 0 16px;
+  color: #555;
+  font-size: 0.85em;
 }
 
 .vessel-card dl {

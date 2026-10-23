@@ -18,7 +18,8 @@ test.beforeEach(async ({ page }) => {
 const vessels = (page: Page) => page.locator("[data-vessel-id]");
 const vessel = (page: Page, id: string) => page.locator(`[data-vessel-id="${id}"]`);
 const caption = (page: Page) => page.locator(".panel__source");
-const note = (page: Page) => page.locator(".panel__message");
+// Рядок результату спроби (R4, SPRINT-03b).
+const attempt = (page: Page) => page.locator(".panel__attempt");
 const card = (page: Page) => page.locator(".vessel-card");
 const field = (page: Page, label: string) =>
   card(page).locator(`dt:text-is("${label}") + dd`);
@@ -106,19 +107,23 @@ test.describe("стани R2 (підміна GET /api/snapshot)", () => {
     await page.getByRole("button", { name: "Завантажити справжні позиції" }).click();
   }
 
-  test("16.5 помилка -> суден немає, підпис і повідомлення помилки", async ({ page }) => {
+  // 16.5 і 16.6 змінені під R4 (SPRINT-03b): помилка й порожня відповідь
+  // більше не прибирають набір - лишається демонстрація з її підписом,
+  // результат спроби - окремим рядком із часом із відповіді.
+  test("16.5 помилка -> набір і підпис збережені, рядок спроби з attemptedAt", async ({ page }) => {
     await loadWith(page, 502, {
       ok: false,
       attemptedAt: "2026-10-23T09:00:00.000Z",
       error: { code: "provider_error", message: "Джерело повернуло помилку" },
     });
-    await expect(caption(page)).toHaveText("Даних на карті немає");
-    await expect(note(page)).toHaveText("Не вдалося отримати дані: Джерело повернуло помилку");
-    await expect(vessels(page)).toHaveCount(0);
-    await expect(card(page)).toHaveCount(0);
+    await expect(attempt(page)).toHaveText(
+      "Спроба 09:00:00 UTC: не вдалося отримати дані: Джерело повернуло помилку",
+    );
+    await expect(caption(page)).toHaveText("Демонстраційні дані");
+    await expect(vessels(page)).toHaveCount(3);
   });
 
-  test("16.6 порожня відповідь -> суден: 0 і повідомлення, суден немає", async ({ page }) => {
+  test("16.6 порожня відповідь -> набір і підпис збережені, рядок спроби з collectedAt", async ({ page }) => {
     await loadWith(page, 200, {
       ok: true,
       vessels: [],
@@ -128,11 +133,11 @@ test.describe("стани R2 (підміна GET /api/snapshot)", () => {
       truncated: false,
       reason: "window_elapsed",
     });
-    await expect(caption(page)).toHaveText(
-      "AISStream · знімок за 15 с · отримано 09:08:07 UTC · суден: 0 · вибірка неповна",
+    await expect(attempt(page)).toHaveText(
+      "Спроба 09:08:07 UTC: за час збору позицій не отримано",
     );
-    await expect(note(page)).toHaveText("За час збору позицій не отримано");
-    await expect(vessels(page)).toHaveCount(0);
+    await expect(caption(page)).toHaveText("Демонстраційні дані");
+    await expect(vessels(page)).toHaveCount(3);
   });
 
   test("16.7 судно без швидкості й курсу -> «Немає даних», data-icon=neutral", async ({ page }) => {
